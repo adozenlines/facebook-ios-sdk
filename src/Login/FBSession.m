@@ -232,8 +232,6 @@ static FBSession *g_activeSession = nil;
         if (cachedTokenData && ![self initializeFromCachedToken:cachedTokenData withPermissions:permissions]) {
             [self.tokenCachingStrategy clearToken];
         };
-
-        [FBSettings autoPublishInstall:self.appID];
     }
     return self;
 }
@@ -244,11 +242,9 @@ static FBSession *g_activeSession = nil;
 - (BOOL)initializeFromCachedToken:(FBAccessTokenData *)cachedToken withPermissions:(NSArray *)permissions
 {
     if (cachedToken && self.state == FBSessionStateCreated) {
-        BOOL isSubset = [FBSessionUtility areRequiredPermissions:permissions
-                                            aSubsetOfPermissions:cachedToken.permissions];
         BOOL isAppID = (!cachedToken.appID || [cachedToken.appID isEqualToString:self.appID]);
 
-        if (isSubset && isAppID && (NSOrderedDescending == [cachedToken.expirationDate compare:[NSDate date]])) {
+        if (isAppID && (NSOrderedDescending == [cachedToken.expirationDate compare:[NSDate date]])) {
             _loginBehavior = [FBSessionUtility loginBehaviorForLoginType:self.accessTokenData.loginType];
             [self transitionToState:FBSessionStateCreatedTokenLoaded
                 withAccessTokenData:cachedToken
@@ -341,7 +337,7 @@ static FBSession *g_activeSession = nil;
             // valid behavior; no-op.
             break;
         default:
-            [FBLogger singleShotLogEntry:FBLoggingBehaviorDeveloperErrors formatString:@"%d is not a valid FBSessionLoginBehavior. Ignoring open call.", behavior];
+            [FBLogger singleShotLogEntry:FBLoggingBehaviorDeveloperErrors formatString:@"%lu is not a valid FBSessionLoginBehavior. Ignoring open call.", (unsigned long)behavior];
             return;
     }
     if (!(self.state == FBSessionStateCreated ||
@@ -364,7 +360,7 @@ static FBSession *g_activeSession = nil;
 
     if ([FBSettings restrictedTreatment] == FBRestrictedTreatmentYES) {
         NSError *error = [self errorLoginFailedWithReason:FBErrorLoginFailedReasonOtherError
-                                                errorCode:[@(FBErrorOperationDisallowedForRestrictedTreament) stringValue]
+                                                errorCode:[@(FBErrorOperationDisallowedForRestrictedTreatment) stringValue]
                                                innerError:nil];
         [self transitionAndCallHandlerWithState:FBSessionStateClosedLoginFailed
                                           error:error
@@ -1517,10 +1513,25 @@ static FBSession *g_activeSession = nil;
     return YES;
 }
 
+- (BOOL)areSomeReauthPermissionsGranted:(NSDictionary *)parameters{
+    if (_requestedReauthPermissions.count == 0) {
+        return YES;
+    }
+
+    NSArray *currentPermissions = [parameters[@"granted_scopes"] componentsSeparatedByString:@","];
+    for (NSString *permission in _requestedReauthPermissions) {
+        if ([currentPermissions containsObject:permission]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 - (BOOL)handleReauthorize:(NSDictionary *)parameters
               accessToken:(NSString *)accessToken {
     // if the URL doesn't contain the access token, an error has occurred.
-    if (!accessToken) {
+    BOOL additionalPermissionsGranted = [self areSomeReauthPermissionsGranted:parameters];
+    if (!accessToken || !additionalPermissionsGranted) {
         // no token in this case implies that the user cancelled the permissions upgrade
         NSError *innerError = parameters[FBInnerErrorObjectKey];
         NSString *errorCode = parameters[@"error_code"];

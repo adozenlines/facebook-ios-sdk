@@ -22,18 +22,51 @@
 #import "FBRequest.h"
 #import "FBRequestConnection.h"
 #import "FBSessionTokenCachingStrategy.h"
+#import "FBSystemAccountStoreAdapter.h"
 #import "FBTestBlocker.h"
 #import "FBUtility.h"
 
 NSString *kTestToken = @"This is a token";
 NSString *kTestAppId = @"AnAppId";
 
-@implementation FBTests
+@implementation FBTests {
+    id _mockBundle;
+}
+
+- (void)setUp {
+    _mockBundle = [[OCMockObject partialMockForObject:[NSBundle mainBundle]] retain];
+    [[[_mockBundle stub] andReturn:[[NSUUID UUID] UUIDString]] bundleIdentifier];
+    id mockAdapter = [OCMockObject mockForClass:[FBSystemAccountStoreAdapter class]];
+    [FBSystemAccountStoreAdapter setSharedInstance:mockAdapter];
+
+    // Mock out various parts of FBUtility that would otherwise fail/hang in commandline runs.
+    self.mockFBUtility = [OCMockObject mockForClass:[FBUtility class]];
+    FBFetchedAppSettings *dummyFBFetchedAppSettings = [[[FBFetchedAppSettings alloc] init] autorelease];
+    [[[self.mockFBUtility stub] andReturn:dummyFBFetchedAppSettings] fetchedAppSettings]; // prevent fetching app settings during FBSession authorizeWithPermissions
+    [[[self.mockFBUtility stub] andReturn:nil] advertiserID];  //also stub advertiserID when it's going to access IDFA since that often hangs.
+    [[[self.mockFBUtility stub] andReturnValue:OCMOCK_VALUE(NO)] isSystemAccountStoreAvailable]; // don't try to access ac account store.
+}
 
 - (void)tearDown
 {
-    [OHHTTPStubs removeAllRequestHandlers];
+    [OHHTTPStubs removeAllStubs];
+    [_mockBundle release];
+    _mockBundle = nil;
+    [FBSystemAccountStoreAdapter setSharedInstance:nil];
+    self.mockFBUtility = nil;
     [super tearDown];
+}
+
+- (OCMockObject *)mainBundleMock {
+    return _mockBundle;
+}
+
+- (void)setMockFBUtility:(id)mockFBUtility {
+    if (mockFBUtility != _mockFBUtility) {
+        [_mockFBUtility stopMocking];
+        [_mockFBUtility release];
+        _mockFBUtility = [mockFBUtility retain];
+    }
 }
 
 #pragma mark Handlers
@@ -119,7 +152,7 @@ NSString *kTestAppId = @"AnAppId";
         [blocker signal];
     });
 
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
 
     [blocker release];
 }
@@ -161,7 +194,7 @@ NSString *kTestAppId = @"AnAppId";
         return nil;
     };
 
-    [OHHTTPStubs shouldStubRequestsPassingTest:^BOOL(NSURLRequest *request) {
+    [OHHTTPStubs stubRequestsPassingTest:^BOOL(NSURLRequest *request) {
         if (callback) {
             callback(request);
         }
@@ -173,7 +206,6 @@ NSString *kTestAppId = @"AnAppId";
 
         return [OHHTTPStubsResponse responseWithData:data
                                           statusCode:statusCode
-                                        responseTime:0
                                              headers:nil];
     }];
 }

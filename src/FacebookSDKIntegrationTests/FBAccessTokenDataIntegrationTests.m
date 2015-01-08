@@ -19,12 +19,20 @@
 #import "FBIntegrationTests.h"
 #import "FBSessionTokenCachingStrategy.h"
 #import "FBTestBlocker.h"
+#import "FBKeychainStore.h"
+#import "FBKeychainStoreDeprecated.h"
+#import "FBTestUserSession.h"
 
 #if defined(FACEBOOKSDK_SKIP_FBACCESSTOKEN_TESTS)
 
 #pragma message ("warning: Skipping FBAccessTokenTests")
 
 #else
+
+@interface FBSessionTokenCachingStrategy(FBAccessTokenDataIntegrationTests)
+- (void)overrideKeyChainStoreForTests:(FBKeychainStore *)keychainStore;
+- (FBKeychainStore *)keychainStore;
+@end
 
 typedef void (^kvo_handler_block)(NSString *keyPath, id object, NSDictionary *change, id context);
 
@@ -79,7 +87,7 @@ typedef void (^kvo_handler_block)(NSString *keyPath, id object, NSDictionary *ch
 
     FBAccessTokenData *cachedToken = [cachingStrategy fetchFBAccessTokenData];
 
-    XCTAssertEqual(randomToken.accessToken, cachedToken.accessToken, @"accessToken does not match");
+    XCTAssertEqualObjects(randomToken.accessToken, cachedToken.accessToken, @"accessToken does not match");
     XCTAssertEqual(randomToken.loginType, cachedToken.loginType, @"loginType does not match");
     XCTAssertTrue([randomToken.permissions isEqualToArray:cachedToken.permissions], @"permissions does not match");
     XCTAssertTrue([randomToken.expirationDate isEqualToDate:cachedToken.expirationDate], @"expirationDate does not match");
@@ -231,7 +239,7 @@ typedef void (^kvo_handler_block)(NSString *keyPath, id object, NSDictionary *ch
 
 - (void)testSessionOpenThenReauthThenCloseWithKVO {
     // Create a session and attach KVO observer.
-    FBTestSession *target = [[FBTestSession sessionWithPrivateUserWithPermissions:nil] retain];
+    FBTestUserSession *target = [[self getTestSessionWithPermissions:@[]] retain];
 
     FBTestBlocker *blocker = [[[FBTestBlocker alloc] init] autorelease];
 
@@ -332,7 +340,7 @@ typedef void (^kvo_handler_block)(NSString *keyPath, id object, NSDictionary *ch
     [target openWithCompletionHandler:^(FBSession *session, FBSessionState status, NSError *error) {
         [blocker signal];
     }];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     XCTAssertTrue(target.isOpen, @"Session should be open, and is not");
     XCTAssertTrue([expectedKvoValuesForOpening count] == 0, @"There were still expected KVO events that did not occur: %@", expectedKvoValuesForOpening);
 
@@ -342,7 +350,7 @@ typedef void (^kvo_handler_block)(NSString *keyPath, id object, NSDictionary *ch
         XCTAssertNil(error, @"unexpected error for new permissions:%@", error);
         [blocker signal];
     }];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     XCTAssertTrue([expectedKvoValuesForNewPermissions count] == 0, @"There were still expected KVO events that did not occur: %@", expectedKvoValuesForNewPermissions);
 
     // Now we close the session and verify the kvo again.
@@ -363,6 +371,95 @@ typedef void (^kvo_handler_block)(NSString *keyPath, id object, NSDictionary *ch
     [expectedKvoValuesForOpening release];
 }
 
+// Test to verify our default caching strategy doesn't collide with someone manually using keychain
+- (void)testCachingStrategyWithManualKeyChain {
+    FBAccessTokenData *randomToken = [FBAccessTokenData createTokenFromString:@"token"
+                                                                  permissions:[NSArray arrayWithObjects:@"perm1", @"perm2", nil]
+                                                               expirationDate:[NSDate date]
+                                                                    loginType:FBSessionLoginTypeFacebookViaSafari
+                                                                  refreshDate:nil];
+
+    FBSessionTokenCachingStrategy *cachingStrategy = [FBSessionTokenCachingStrategy defaultInstance];
+    [cachingStrategy clearToken];
+    [cachingStrategy cacheFBAccessTokenData:randomToken];
+
+    FBAccessTokenData *cachedToken = [cachingStrategy fetchFBAccessTokenData];
+
+    XCTAssertEqualObjects(randomToken.accessToken, cachedToken.accessToken, @"accessToken does not match");
+    XCTAssertEqual(randomToken.loginType, cachedToken.loginType, @"loginType does not match");
+    XCTAssertTrue([randomToken.permissions isEqualToArray:cachedToken.permissions], @"permissions does not match");
+    XCTAssertTrue([randomToken.expirationDate isEqualToDate:cachedToken.expirationDate], @"expirationDate does not match");
+
+    FBKeychainStore *keyChain = [[[FBKeychainStore alloc] initWithService:nil] autorelease];
+    XCTAssertTrue([keyChain setString:@"somestring" forKey:@"somekey"]);
+    NSString *actual = [keyChain stringForKey:@"somekey"];
+    XCTAssertTrue([actual isEqualToString:@"somestring"]);
+}
+
+- (void)testCachingStrategyFBKeychainStoreDeprecatedCompatibility {
+    FBAccessTokenData *randomToken = [FBAccessTokenData createTokenFromString:@"oldtoken"
+                                                                  permissions:[NSArray arrayWithObjects:@"perm1", @"perm2", nil]
+                                                               expirationDate:[NSDate date]
+                                                                    loginType:FBSessionLoginTypeFacebookViaSafari
+                                                                  refreshDate:nil];
+    FBKeychainStoreDeprecated *oldKeychain = [[FBKeychainStoreDeprecated alloc] init];
+
+    FBSessionTokenCachingStrategy *cachingStrategy = [FBSessionTokenCachingStrategy defaultInstance];
+    [cachingStrategy clearToken];
+    FBKeychainStore *updatedKeychain = [[cachingStrategy keychainStore] retain];
+
+    // cache the token using the old keychain (which uses the default bundle id serveice)
+    [cachingStrategy overrideKeyChainStoreForTests:oldKeychain];
+    [cachingStrategy cacheFBAccessTokenData:randomToken];
+
+    // reset back to updated keychain and test the fetch
+    [cachingStrategy overrideKeyChainStoreForTests:updatedKeychain];
+
+    FBAccessTokenData *cachedToken = [cachingStrategy fetchFBAccessTokenData];
+
+    XCTAssertEqualObjects(randomToken.accessToken, cachedToken.accessToken, @"accessToken does not match");
+    XCTAssertEqual(randomToken.loginType, cachedToken.loginType, @"loginType does not match");
+    XCTAssertTrue([randomToken.permissions isEqualToArray:cachedToken.permissions], @"permissions does not match");
+    XCTAssertTrue([randomToken.expirationDate isEqualToDate:cachedToken.expirationDate], @"expirationDate does not match");
+
+    [oldKeychain release];
+    [updatedKeychain release];
+}
+
+
+// test to suport caching multiple tokens.
+- (void)testMultipleCachingStrategies {
+    NSArray *tokens = @[
+                        [FBAccessTokenData createTokenFromString:@"token1"
+                                                     permissions:[NSArray arrayWithObjects:@"perm1", @"perm2", nil]
+                                                  expirationDate:[NSDate date]
+                                                       loginType:FBSessionLoginTypeFacebookViaSafari
+                                                     refreshDate:nil],
+                        [FBAccessTokenData createTokenFromString:@"token2"
+                                                     permissions:[NSArray arrayWithObjects:@"perm1", @"perm2", nil]
+                                                  expirationDate:[NSDate date]
+                                                       loginType:FBSessionLoginTypeFacebookViaSafari
+                                                     refreshDate:nil]
+                        ];
+    NSArray *caches = @[
+                        [[[FBSessionTokenCachingStrategy alloc] initWithUserDefaultTokenInformationKeyName:@"token1"] autorelease],
+                        [[[FBSessionTokenCachingStrategy alloc] initWithUserDefaultTokenInformationKeyName:@"token2"] autorelease]
+                        ];
+    [caches enumerateObjectsUsingBlock:^(id cache, NSUInteger idx, BOOL *stop) {
+        [cache clearToken];
+        [cache cacheFBAccessTokenData:tokens[idx]];
+    }];
+
+    [tokens enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+        FBAccessTokenData *actualToken = [caches[idx] fetchFBAccessTokenData];
+        FBAccessTokenData *expectedToken = (FBAccessTokenData *)obj;
+        XCTAssertEqualObjects(actualToken.accessToken, expectedToken.accessToken, @"accessToken does not match");
+        XCTAssertEqual(actualToken.loginType, expectedToken.loginType, @"loginType does not match");
+        XCTAssertTrue([actualToken.permissions isEqualToArray:expectedToken.permissions], @"permissions does not match");
+        XCTAssertTrue([actualToken.expirationDate isEqualToDate:expectedToken.expirationDate], @"expirationDate does not match");
+
+    }];
+}
 @end
 
 #endif

@@ -64,7 +64,6 @@ static NSString *const kNonAppBridgeAppCallURL = @"fb123456789://link?meal=Chick
     // This one is just here to keep UIApplication class methods mocked without a circular reference.
     id _anotherMockApplication;
     id _mockFBSettings;
-    id _mockFBUtility;
 }
 
 #pragma mark Helpers
@@ -76,6 +75,7 @@ static NSString *const kNonAppBridgeAppCallURL = @"fb123456789://link?meal=Chick
     }
 }
 - (void)setUp {
+    [super setUp];
     // FBAppBridge relies on UIApplication for handling URLs; mock it and return
     // the mock from [UIApplication sharedApplication]. This little dance is necessary to avoid
     // a circular reference that keeps the class method from being unmocked.
@@ -89,9 +89,9 @@ static NSString *const kNonAppBridgeAppCallURL = @"fb123456789://link?meal=Chick
     [[[_mockFBSettings stub] andReturn:kTestAppName] defaultDisplayName];
     
     // Pretend that all URL schemes are registered or [FBAppCall init] will fail.
-    _mockFBUtility = [OCMockObject mockForClass:[FBUtility class]];
     BOOL yes = YES;
-    [[[_mockFBUtility stub] andReturnValue:OCMOCK_VALUE(yes)]
+
+    [[[self.mockFBUtility stub] andReturnValue:OCMOCK_VALUE(yes)]
         isRegisteredURLScheme:kTestURLScheme];
     [[_mockApplication stub] keyWindow];
 }
@@ -101,7 +101,7 @@ static NSString *const kNonAppBridgeAppCallURL = @"fb123456789://link?meal=Chick
     _mockApplication = nil;
     _anotherMockApplication = nil;
     _mockFBSettings = nil;
-    _mockFBUtility = nil;
+    [super tearDown];
 }
 
 - (FBAppCall *)newAppCall:(BOOL)withDialogsData {

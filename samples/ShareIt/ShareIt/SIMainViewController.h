@@ -14,18 +14,19 @@
  * limitations under the License.
  */
 
-
 #import <UIKit/UIKit.h>
 
 #import <FacebookSDK/FacebookSDK.h>
 
-/*
- A view controller to fetch taggable friends from Facebook and show them
- in a selectable table view. This is a very light weight implementation
- and does not have paging or other features like setting the previous selection.
- */
-@interface SCTaggableFriendsViewController : FBViewController <UITableViewDataSource, UITableViewDelegate>
+@interface SIMainViewController : UIViewController <UIScrollViewDelegate>
 
-@property (nonatomic, readonly, copy) NSArray *selection;
+@property (nonatomic, strong) IBOutlet FBLikeControl *pageLikeControl;
+
+@property (nonatomic, strong) IBOutlet FBLoginView *loginView;
+@property (nonatomic, strong) IBOutlet UIPageControl *pageControl;
+@property (nonatomic, strong) IBOutlet UIScrollView *scrollView;
+
+- (IBAction)changePage:(id)sender;
+- (IBAction)share:(id)sender;
 
 @end

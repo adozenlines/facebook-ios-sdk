@@ -21,7 +21,7 @@
 #import "FBRequestConnection.h"
 #import "FBSessionTokenCachingStrategy.h"
 #import "FBTestBlocker.h"
-#import "FBTestSession.h"
+#import "FBTestUserSession.h"
 
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
@@ -57,7 +57,7 @@
     [connection addRequest:request2 completionHandler:[self handlerExpectingSuccessSignaling:blocker]];
          
     [connection start];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     
     [connection release];
     [blocker release];
@@ -65,9 +65,9 @@
 
 - (void)testDifferentAccessTokens
 {
-    FBTestSession *session1 = self.defaultTestSession;
-    FBTestSession *session2 = [self getSessionWithSharedUserWithPermissions:nil
-                                                              uniqueUserTag:kSecondTestUserTag];
+    NSArray *sessions = [self getTestSessionsWithPermissions:@[] count:2];
+    FBSession *session1 = [self loginSession:sessions[0]];
+    FBSession *session2 = [self loginSession:sessions[1]];
     
     FBRequest *request1 = [[[FBRequest alloc] initWithSession:session1
                                                     graphPath:@"me"]
@@ -84,20 +84,20 @@
              XCTAssertTrue(!error, @"!error");
              XCTAssertNotNil(result, @"nil result");
              id<FBGraphUser> user = result;
-             XCTAssertTrue([user.id isEqualToString:self.defaultTestSession.testUserID], @"wrong user");
+             XCTAssertTrue([user.id isEqualToString:session1.accessTokenData.userID], @"wrong user");
          }];
     [connection addRequest:request2
          completionHandler:^(FBRequestConnection *innerConnection, id result, NSError *error) {
              XCTAssertTrue(!error, @"!error");
              XCTAssertNotNil(result, @"nil result");
              id<FBGraphUser> user = result;
-             XCTAssertTrue([user.id isEqualToString:session2.testUserID], @"wrong user");
+             XCTAssertTrue([user.id isEqualToString:session2.accessTokenData.userID], @"wrong user");
              
              [blocker signal];
          }];
     
     [connection start];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     
     [connection release];
     [blocker release];
@@ -128,7 +128,7 @@
          }];
     
     [connection start];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     
     [connection release];
     [blocker release];
@@ -159,7 +159,7 @@
          }];
     
     [connection start];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     
     [connection release];
     [blocker release];
@@ -168,14 +168,14 @@
 - (void)testBatchWithTwoSessionlessRequestsAndDefaultAppID
 {
     // Only use this to get the unit-testing app ID.
-    FBTestSession *session = self.defaultTestSession;
-    [FBSession setDefaultAppID:session.testAppID];
+    FBSession *session = self.defaultTestSession;
+    [FBSession setDefaultAppID:[self testAppId]];
 
     FBRequest *request1 =[[[FBRequest alloc] initWithSession:nil
-                                                   graphPath:session.testUserID]
+                                                   graphPath:session.accessTokenData.userID]
                           autorelease];
     FBRequest *request2 = [[[FBRequest alloc] initWithSession:nil
-                                                    graphPath:session.testUserID]
+                                                    graphPath:session.accessTokenData.userID]
                            autorelease];
     
     FBRequestConnection *connection = [[FBRequestConnection alloc] init];
@@ -194,7 +194,7 @@
          }];
     
     [connection start];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     
     [connection release];
     [blocker release];
@@ -219,7 +219,7 @@
     }
 
     [connection start];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     
     [connection release];
     [blocker release];
@@ -227,7 +227,7 @@
 
 - (void)testBatchUploadPhoto
 {
-    FBTestSession *session = [self getSessionWithSharedUserWithPermissions:@[@"user_photos", @"publish_actions"]];
+    FBSession *session = [self loginSession:[self getTestSessionWithPermissions:@[@"user_photos", @"publish_actions"]]];
     
     FBRequestConnection *connection = [[FBRequestConnection alloc] init];
     __block FBTestBlocker *blocker = [[FBTestBlocker alloc] initWithExpectedSignalCount:4];
@@ -287,18 +287,20 @@
          }];
 
     [connection start];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     
     [connection release];
     [blocker release];
 }
 
 - (void)testBatchParametersOmitResponseOnSuccess {
-    FBTestSession *session = [self defaultTestSession];
+    FBSession *session = [self defaultTestSession];
     FBRequestConnection *connection = [[[FBRequestConnection alloc] init] autorelease];
     FBTestBlocker *blocker = [[FBTestBlocker alloc] initWithExpectedSignalCount:2];
 
-    NSString *graphPath = [NSString stringWithFormat:@"?ids=%@,%@&fields=id", session.testAppID, session.testUserID];
+    NSString *graphPath = [NSString stringWithFormat:@"?ids=%@,%@&fields=id",
+                           [self testAppId],
+                           session.accessTokenData.userID];
     FBRequest *parent = [[[FBRequest alloc] initWithSession:session graphPath:graphPath] autorelease];
     [connection addRequest:parent
          completionHandler:^(FBRequestConnection *innerConnection, id result, NSError *error) {
@@ -320,7 +322,7 @@
 }
 
 - (void)testBatchParametersDependsOn {
-    FBTestSession *session = [self defaultTestSession];
+    FBSession *session = [self defaultTestSession];
     FBRequestConnection *connection = [[[FBRequestConnection alloc] init] autorelease];
     FBTestBlocker *blocker = [[FBTestBlocker alloc] initWithExpectedSignalCount:2];
 

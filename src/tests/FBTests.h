@@ -14,11 +14,13 @@
  * limitations under the License.
  */
 
+#import <OCMock/OCMock.h>
+
 #import <XCTest/XCTest.h>
 
 #import "FBRequestConnection.h"
 #import "FBSDKMacros.h"
-#import "FBTestSession.h"
+#import "FBSession.h"
 
 FBSDK_EXTERN NSString *kTestToken;
 FBSDK_EXTERN NSString *kTestAppId;
@@ -54,5 +56,9 @@ typedef void (^HTTPStubCallback)(NSURLRequest *request);
 - (void)stubMatchingRequestsWithResponses:(NSDictionary *)requestsAndResponses
                                statusCode:(int)statusCode
                                  callback:(HTTPStubCallback)callback;
+
+- (OCMockObject *)mainBundleMock;
+
+@property (nonatomic, retain) id mockFBUtility;
 
 @end

@@ -32,13 +32,16 @@ COMPONENT_FB_SDK_PKG=$FB_SDK_BUILD/FacebookSDK.pkg
 FB_SDK_UNSIGNED_PKG=$FB_SDK_BUILD/FacebookSDK-${FB_SDK_NORMALIZED_PGK_VERSION}-unsigned.pkg
 FB_SDK_PKG=$FB_SDK_BUILD/FacebookSDK-${FB_SDK_NORMALIZED_PGK_VERSION}.pkg
 
+FB_SDK_BUILD_ROOT_DIR=Documents/FacebookSDK
+
 FB_SDK_BUILD_PACKAGE=$FB_SDK_BUILD/package
-FB_SDK_BUILD_PACKAGE_FRAMEWORK_SUBDIR=Documents/FacebookSDK
+FB_SDK_BUILD_PACKAGE_FRAMEWORK_SUBDIR=$FB_SDK_BUILD_ROOT_DIR
 FB_SDK_BUILD_PACKAGE_FRAMEWORK=$FB_SDK_BUILD_PACKAGE/$FB_SDK_BUILD_PACKAGE_FRAMEWORK_SUBDIR
 FB_SDK_BUILD_PACKAGE_SAMPLES=$FB_SDK_BUILD_PACKAGE/Documents/FacebookSDK/Samples
+FB_SDK_BUILD_PACKAGE_SCRIPTS=$FB_SDK_BUILD/Scripts
 FB_SDK_BUILD_PACKAGE_DOCS=$FB_SDK_BUILD_PACKAGE/Library/Developer/Shared/Documentation/DocSets/$FB_SDK_DOCSET_NAME
 
-BOLTS_BUILD_PACKAGE_FRAMEWORK_SUBDIR=Documents
+BOLTS_BUILD_PACKAGE_FRAMEWORK_SUBDIR=$FB_SDK_BUILD_ROOT_DIR
 BOLTS_BUILD_PACKAGE_FRAMEWORK=$FB_SDK_BUILD_PACKAGE/$BOLTS_BUILD_PACKAGE_FRAMEWORK_SUBDIR
 
 CODE_SIGN_IDENTITY='Developer ID Installer: Facebook, Inc. (V9WTTPBFK9)'
@@ -56,11 +59,12 @@ echo Building Distribution.
 # Build package directory structure
 #
 progress_message "Building package directory structure."
-\rm -rf "$FB_SDK_BUILD_PACKAGE"
+\rm -rf "$FB_SDK_BUILD_PACKAGE" "$FB_SDK_BUILD_PACKAGE_SCRIPTS"
 mkdir "$FB_SDK_BUILD_PACKAGE" \
   || die "Could not create directory $FB_SDK_BUILD_PACKAGE"
 mkdir -p "$FB_SDK_BUILD_PACKAGE_FRAMEWORK"
 mkdir -p "$FB_SDK_BUILD_PACKAGE_SAMPLES"
+mkdir -p "$FB_SDK_BUILD_PACKAGE_SCRIPTS"
 mkdir -p "$FB_SDK_BUILD_PACKAGE_DOCS"
 
 \cp -R "$FB_SDK_FRAMEWORK" "$FB_SDK_BUILD_PACKAGE_FRAMEWORK" \
@@ -69,6 +73,8 @@ mkdir -p "$FB_SDK_BUILD_PACKAGE_DOCS"
   || die "Could not copy $BOLTS_FRAMEWORK"
 \cp -R "$FB_SDK_SAMPLES/" "$FB_SDK_BUILD_PACKAGE_SAMPLES" \
   || die "Could not copy $FB_SDK_BUILD_PACKAGE_SAMPLES"
+\cp -R "$FB_SDK_SCRIPT/package/preinstall" "$FB_SDK_BUILD_PACKAGE_SCRIPTS" \
+  || die "Could not copy $FB_SDK_SCRIPT/package/preflight"
 \cp -R "$FB_SDK_FRAMEWORK_DOCS/Contents" "$FB_SDK_BUILD_PACKAGE_DOCS" \
   || die "Could not copy $$FB_SDK_FRAMEWORK_DOCS/Contents"
 \cp "$FB_SDK_ROOT/README.txt" "$FB_SDK_BUILD_PACKAGE_FRAMEWORK" \
@@ -98,12 +104,13 @@ progress_message "Building .pkg from package directory."
 \rm -rf "$COMPONENT_FB_SDK_PKG"
 $PACKAGEBUILD --root "$FB_SDK_BUILD_PACKAGE" \
  		 --identifier "com.facebook.sdk.pkg" \
+ 		 --scripts "$FB_SDK_BUILD_PACKAGE_SCRIPTS" \
  		 --version $FB_SDK_NORMALIZED_PGK_VERSION   \
  		 "$COMPONENT_FB_SDK_PKG" || die "Failed to pkgbuild component package"
 
 # Build product archive (note --resources should point to the folder containing the README)
 \rm -rf "$FB_SDK_UNSIGNED_PKG"
-$PRODUCTBUILD --distribution "$FB_SDK_SCRIPT/productbuild_distribution.xml" \
+$PRODUCTBUILD --distribution "$FB_SDK_SCRIPT/package/productbuild_distribution.xml" \
  			 --package-path $FB_SDK_BUILD \
 			 --resources "$FB_SDK_BUILD/package/Documents/FacebookSDK/" \
 			 "$FB_SDK_UNSIGNED_PKG" || die "Failed to productbuild the product archive"

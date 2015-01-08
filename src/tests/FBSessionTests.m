@@ -19,6 +19,7 @@
 #import "FBAccessTokenData+Internal.h"
 #import "FBError.h"
 #import "FBGraphUser.h"
+#import "FBInMemoryFBSessionTokenCachingStrategy.h"
 #import "FBInternalSettings.h"
 #import "FBRequest.h"
 #import "FBSession+Internal.h"
@@ -26,7 +27,6 @@
 #import "FBSessionUtility.h"
 #import "FBSystemAccountStoreAdapter.h"
 #import "FBTestBlocker.h"
-#import "FBTestSession.h"
 #import "FBTests.h"
 #import "FBUtility.h"
 
@@ -68,6 +68,11 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
     FBTestBlocker *_blocker;
     Method _originalIsRegisteredCheck;
     Method _swizzledIsRegisteredCheck;
+
+    Method _originalTokenCachingStrategyDefaultInstance;
+    Method _swizzledTokenCachingStrategyDefaultInstance;
+    id _mockFBSessionTokenCachingStrategy;
+    FBInMemoryFBSessionTokenCachingStrategy *_inMemoryFBSessionTokenCachingStrategy;
 }
 
 + (BOOL)isRegisteredURLSchemeReplacement:(NSString *)url
@@ -77,10 +82,13 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
 
 - (void)setUp {
     [super setUp];
+    _inMemoryFBSessionTokenCachingStrategy = [[FBInMemoryFBSessionTokenCachingStrategy alloc] init];
 
-    // In general, tests use a mock token caching strategy, but some tests verify behavior using the
-    // default strategy and we want to ensure it is clean.
-    [[FBSessionTokenCachingStrategy defaultInstance] clearToken];
+    // Default token caching strategy now uses keychain which requires emulator services running
+    // and is not supported by xctool logic tests (https://github.com/facebook/xctool/issues/269)
+    // So for these tests let's swizzle out the defaultInstance with an in memory one.
+    _mockFBSessionTokenCachingStrategy = [OCMockObject mockForClass:[FBSessionTokenCachingStrategy class]];
+    [[[_mockFBSessionTokenCachingStrategy stub] andReturn:_inMemoryFBSessionTokenCachingStrategy] defaultInstance];
 
     FBSession.defaultAppID = nil;
     FBSession.defaultUrlSchemeSuffix = nil;
@@ -91,7 +99,6 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
     _originalIsRegisteredCheck = class_getClassMethod([FBUtility class], @selector(isRegisteredURLScheme:));
     _swizzledIsRegisteredCheck = class_getClassMethod([self class], @selector(isRegisteredURLSchemeReplacement:));
     method_exchangeImplementations(_originalIsRegisteredCheck, _swizzledIsRegisteredCheck);
-
 }
 
 - (void)tearDown {
@@ -103,6 +110,8 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
     method_exchangeImplementations(_swizzledIsRegisteredCheck, _originalIsRegisteredCheck);
     _originalIsRegisteredCheck = nil;
     _swizzledIsRegisteredCheck = nil;
+    [_mockFBSessionTokenCachingStrategy stopMocking];
+    [_inMemoryFBSessionTokenCachingStrategy release];
 }
 
 #pragma mark Init tests
@@ -413,13 +422,12 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
     [session release];
 }
 
-- (void)testInitWithValidTokenAndNonSubsetOfCachedPermissionsDoesNotUseCachedToken {
+- (void)testInitWithValidTokenAndNonSubsetOfCachedPermissionsDoesUseCachedToken {
     FBAccessTokenData *mockToken = [self createValidMockToken];
     NSArray *tokenPermissions = [NSArray arrayWithObjects:@"permission1", @"permission2", nil];
     [[[(id)mockToken stub] andReturn:tokenPermissions] permissions];
     
     FBSessionTokenCachingStrategy *mockStrategy = [self createMockTokenCachingStrategyWithToken:mockToken];
-    [[(id)mockStrategy expect] clearToken];
 
     NSArray *sessionPermissions = [NSArray arrayWithObject:@"permission3"];
     FBSession *session = [[FBSession alloc] initWithAppID:kTestAppId
@@ -428,10 +436,8 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
                                           urlSchemeSuffix:nil
                                        tokenCacheStrategy:mockStrategy];
     
-    [(id)mockStrategy verify];
-    
-    assertThat(session.permissions, equalTo(sessionPermissions));
-    assertThatInt(session.state, equalToInt(FBSessionStateCreated));
+    assertThat(session.permissions, equalTo(tokenPermissions));
+    assertThatInt(session.state, equalToInt(FBSessionStateCreatedTokenLoaded));
     [session release];
 }
 
@@ -919,33 +925,6 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
     assertThatInt(session.state, equalToInt(FBSessionStateCreated));
 }
 
-// TODO when running from the command line, this hangs
-/*
-- (void)testGetSystemAccountStoreAdapter {
-    [FBSession setDefaultAppID:kAppId];
-    FBSession *session = [[FBSession alloc] init];
-    
-    // Only do this if it's available (iOS 6.0+)
-    if ([self isSystemVersionAtLeast:@"6.0"]) {
-        FBSystemAccountStoreAdapter *adapter = [session getSystemAccountStoreAdapter];
-        
-        assertThat(adapter, equalTo([FBSystemAccountStoreAdapter sharedInstance]));
-    }
-    
-    [session release];
-}
-
- - (void)testIsSystemAccountStoreAvailable {
- BOOL shouldBeAvailable = [self isSystemVersionAtLeast:@"6.0"];
- 
- [FBSession setDefaultAppID:kAppId];
- FBSession *session = [[FBSession alloc] init];
- 
- assertThatBool([session isSystemAccountStoreAvailable], equalToBool(shouldBeAvailable));
- }
- 
-*/
-
 - (void)testIsMultitaskingSupported {
     UIDevice *device = [UIDevice currentDevice];
     BOOL shouldBeSupported = [device respondsToSelector:@selector(isMultitaskingSupported)] &&
@@ -1181,7 +1160,7 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
     
 }
 
-- (void)testOpenActiveSessionRequestingMorePermissionsThanTokenFails {
+- (void)testOpenActiveSessionRequestingMorePermissionsThanTokenPasses {
     [FBSession setDefaultAppID:kTestAppId];
     
     FBAccessTokenData *token = [self createValidMockToken];
@@ -1199,10 +1178,10 @@ static NSString *kURLSchemeSuffix = @"URLSuffix";
     
     FBSession *activeSession = FBSession.activeSession;
     
-    assertThatBool(result, equalToBool(NO));
-    assertThatBool(handlerCalled, equalToBool(NO));
+    assertThatBool(result, equalToBool(YES));
+    assertThatBool(handlerCalled, equalToBool(YES));
     assertThat(activeSession, notNilValue());
-    assertThatInt(activeSession.state, equalToInt(FBSessionStateCreated));
+    assertThatInt(activeSession.state, equalToInt(FBSessionStateOpen));
     
 }
 

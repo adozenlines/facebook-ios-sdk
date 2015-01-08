@@ -22,7 +22,7 @@
 #import "FBInternalSettings.h"
 #import "FBRequest.h"
 #import "FBTestBlocker.h"
-#import "FBTestSession.h"
+#import "FBTestUserSession.h"
 #import "FBUtility.h"
 
 #define UNIT_TEST_OPEN_GRAPH_NAMESPACE "facebooksdktests"
@@ -145,34 +145,6 @@ static NSString *const UNIT_TEST_OPEN_GRAPH_TEST_OBJECT_NAMESPACE = @""UNIT_TEST
     XCTAssertTrue(found, @"didn't find Lincoln Memorial");
 }
 
-- (void)testRestRequestGetUser {
-    BOOL originalMode = [FBSettings isPlatformCompatibilityEnabled];
-    [FBSettings enablePlatformCompatibility:YES];
-    FBTestSession *session = self.defaultTestSession;
-
-    NSDictionary *parameters = [NSDictionary dictionaryWithObjectsAndKeys:
-                                session.testUserID, @"uids",
-                                @"uid,name", @"fields",
-                                nil];
-    FBRequest *request = [[[FBRequest alloc] initWithSession:session
-                                                  restMethod:@"users.getInfo"
-                                                  parameters:parameters
-                                                  HTTPMethod:nil]
-                          autorelease];
-
-    NSArray *responses = [self sendRequests:request, nil];
-    XCTAssertNotNil(responses, @"responses");
-
-    NSArray *firstResponse = (NSArray *)[responses objectAtIndex:0];
-    NSDictionary *firstResult = (NSDictionary *)[firstResponse objectAtIndex:0];
-    XCTAssertNotNil(firstResult, @"firstResult");
-
-    NSString *uid = [[firstResult objectForKey:@"uid"] stringValue];
-    XCTAssertNotNil(uid, @"uid");
-    XCTAssertTrue([session.testUserID isEqualToString:uid], @"don't match");
-    [FBSettings enablePlatformCompatibility:originalMode];
-}
-
 - (NSArray *)sendRequests:(FBRequest *)firstRequest, ...
 {
     NSMutableArray *requests = [[[NSMutableArray alloc] init] autorelease];
@@ -216,7 +188,7 @@ static NSString *const UNIT_TEST_OPEN_GRAPH_TEST_OBJECT_NAMESPACE = @""UNIT_TEST
     // thread.  That is not guaranteed in the contract, and code anywhere other
     // than an SDK unit test should have a while loop to wait for the full set
     // of results.
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     XCTAssertTrue([results count] == [requests count],
                  @"[results count] == [requests count]");
 
@@ -226,7 +198,7 @@ static NSString *const UNIT_TEST_OPEN_GRAPH_TEST_OBJECT_NAMESPACE = @""UNIT_TEST
 - (void)testGraphObjectTypedRequest
 {
     FBTestBlocker *blocker = [[[FBTestBlocker alloc] init] autorelease];
-    FBTestSession *session = self.defaultTestSession;
+    FBSession *session = self.defaultTestSession;
     [FBSession setActiveSession:session];
 
     [FBRequestConnection startWithGraphPath:@"100902843288017" // great fried chicken
@@ -237,22 +209,24 @@ static NSString *const UNIT_TEST_OPEN_GRAPH_TEST_OBJECT_NAMESPACE = @""UNIT_TEST
                               [blocker signal];
                           }];
 
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
 }
 
 - (void)testGraphObjectTypedRequest2
 {
     FBTestBlocker *blocker = [[[FBTestBlocker alloc] init] autorelease];
-    FBTestSession *session = self.defaultTestSession;
+    FBSession *session = self.defaultTestSession;
     [FBSession setActiveSession:session];
 
-    [FBRequestConnection startWithGraphPath:session.testUserID
+    XCTAssertTrue(session.accessTokenData.userID > 0);
+    [FBRequestConnection startWithGraphPath:session.accessTokenData.userID
                           completionHandler:^(FBRequestConnection *connection, id<FBGraphUser> user, NSError *error) {
-                              XCTAssertTrue([user.name isEqualToString:session.testUserName], @"Got unexpected user");
+                              XCTAssertNotNil(user);
+                              XCTAssertNil(error);
                               [blocker signal];
                           }];
 
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
 }
 
 - (void)testSimpleGraphGet
@@ -262,7 +236,7 @@ static NSString *const UNIT_TEST_OPEN_GRAPH_TEST_OBJECT_NAMESPACE = @""UNIT_TEST
     [FBRequestConnection startWithGraphPath:@"TourEiffel"
                           completionHandler:[self handlerExpectingSuccessSignaling:blocker]];
 
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     [blocker release];
 
 }
@@ -273,7 +247,7 @@ static NSString *const UNIT_TEST_OPEN_GRAPH_TEST_OBJECT_NAMESPACE = @""UNIT_TEST
     [FBSession setActiveSession:self.defaultTestSession];
     [FBRequestConnection startWithGraphPath:@"-1"
                           completionHandler:[self handlerExpectingFailureSignaling:blocker]];
-    [blocker wait];
+    XCTAssertTrue([blocker waitWithTimeout:30], @"blocker timed out");
     [blocker release];
 
 }
@@ -416,6 +390,7 @@ withExpectedResults:(NSArray *)expectedResults
 {
     FBRequest *deleteRequest = [FBRequest requestForDeleteObject:fbid];
     [deleteRequest setSession:self.defaultTestSession];
+
     NSArray *response = [self sendRequests:deleteRequest, nil];
 
     XCTAssertNotNil(response, @"delete response");
@@ -426,8 +401,8 @@ withExpectedResults:(NSArray *)expectedResults
                  @"delete: ![[response objectAtIndex:0] isKindOfClass:[NSError class]]");
     XCTAssertTrue([[response objectAtIndex:0] isKindOfClass:[NSDictionary class]],
                  @"delete: [[response objectAtIndex:0] isKindOfClass:[NSDictionary class]]");
-    XCTAssertTrue([[[response objectAtIndex:0] objectForKey:@"FACEBOOK_NON_JSON_RESULT" ] isEqualToString:@"true"],
-                 @"delete: [[response objectAtIndex:0] isEqualToString:@\"true\"]");
+    XCTAssertTrue([[[response objectAtIndex:0] valueForKey:@"success" ] intValue] == 1,
+                 @"delete: [[response objectAtIndex:0] valueForKey:@\"success\"] equals 1");
 
 }
 
@@ -589,7 +564,7 @@ withExpectedResults:(NSArray *)expectedResults
 
 - (void)testLegacyCompatibility
 {
-    FBTestSession *session = self.defaultTestSession;
+    FBSession *session = self.defaultTestSession;
     [FBSettings enablePlatformCompatibility:YES];
     FBTestBlocker *blocker = [[[FBTestBlocker alloc] init] autorelease];
     FBRequest *permissions = [FBRequest requestForGraphPath:@"me/permissions"];

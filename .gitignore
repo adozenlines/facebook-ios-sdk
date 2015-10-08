@@ -15,3 +15,8 @@ project.xcworkspace
 xcuserdata
 .arcbuildbootstrap
 TestAppIdAndSecret.xcconfig
+.DS_Store
+*.xcscmblueprint
+
+# vim temp files
+*.swp

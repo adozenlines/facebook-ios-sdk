@@ -20,12 +20,10 @@
 
 @interface FBSDKCoreKitTestUtility : NSObject
 
-/*!
- * @abstract Mocks the main NSBundle to return the bundle containing this class, instead
+/**
+ *  Mocks the main NSBundle to return the bundle containing this class, instead
  * of the XCTest program bundle.
  */
 + (id)mainBundleMock;
-
-+ (id)mockAccountStoreAdapter;
 
 @end

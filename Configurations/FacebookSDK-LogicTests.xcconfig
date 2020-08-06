@@ -16,9 +16,9 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-#include "TestAppIdAndSecret.xcconfig"
+#include? "TestAppIdAndSecret.xcconfig"
 
-// Code Signing
+// Code signing
 CODE_SIGN_IDENTITY[sdk=iphoneos*] = iPhone Developer
 
 // Packaging
@@ -26,6 +26,6 @@ WRAPPER_EXTENSION = xctest
 
 // Linking
 OTHER_LDFLAGS = -all_load -lc++
-ENABLE_BITCODE = NO
+ENABLE_BITCODE = YES
 
 IPHONEOS_DEPLOYMENT_TARGET = 8.0

@@ -17,15 +17,17 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #import <UIKit/UIKit.h>
-
-#import <FBSDKCoreKit/FBSDKCoreKit.h>
-
-#import <FBSDKShareKit/FBSDKShareConstants.h>
-#import <FBSDKShareKit/FBSDKShareVideo.h>
-
 #import <XCTest/XCTest.h>
 
+#ifdef BUCK
+#import <FBSDKCoreKit/FBSDKCoreKit.h>
+#else
+@import FBSDKCoreKit;
+#endif
+
+#import "FBSDKShareConstants.h"
 #import "FBSDKShareModelTestUtility.h"
+#import "FBSDKShareVideo.h"
 
 @interface FBSDKShareVideoTests : XCTestCase
 @end
@@ -34,8 +36,9 @@
 
 - (void)testImageProperties
 {
-  FBSDKShareVideo *video = [FBSDKShareModelTestUtility video];
+  FBSDKShareVideo *video = [FBSDKShareModelTestUtility videoWithPreviewPhoto];
   XCTAssertEqualObjects(video.videoURL, [FBSDKShareModelTestUtility videoURL]);
+  XCTAssertEqualObjects(video.previewPhoto, [FBSDKShareModelTestUtility photoWithImageURL]);
 }
 
 - (void)testCopy
@@ -46,9 +49,13 @@
 
 - (void)testCoding
 {
-  FBSDKShareVideo *video = [FBSDKShareModelTestUtility video];
+  FBSDKShareVideo *video = [FBSDKShareModelTestUtility videoWithPreviewPhoto];
   NSData *data = [NSKeyedArchiver archivedDataWithRootObject:video];
+#if __IPHONE_OS_VERSION_MIN_REQUIRED >= __IPHONE_11_0
+  FBSDKShareVideo *unarchivedVideo = [NSKeyedUnarchiver unarchivedObjectOfClass:[FBSDKShareVideo class] fromData:data error:nil];
+#else
   FBSDKShareVideo *unarchivedVideo = [NSKeyedUnarchiver unarchiveObjectWithData:data];
+#endif
   XCTAssertEqualObjects(unarchivedVideo, video);
 }
 

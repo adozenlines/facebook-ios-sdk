@@ -2,9 +2,9 @@
 
 Pod::Spec.new do |s|
 
-  s.name         = "FBSDKCoreKit"
-  s.version      = "4.7.0"
-  s.summary      = "Official Facebook SDK for iOS to access Facebook Platform's core features"
+  s.name         = 'FBSDKCoreKit'
+  s.version      = '7.1.1'
+  s.summary      = 'Official Facebook SDK for iOS to access Facebook Platform core features'
 
   s.description  = <<-DESC
                    The Facebook SDK for iOS CoreKit framework provides:
@@ -13,37 +13,66 @@ Pod::Spec.new do |s|
                    * Working with Access Tokens and User Profiles
                    DESC
 
-  s.homepage     = "https://developers.facebook.com/docs/ios/"
-  s.license      = { :type => "Facebook Platform License", :file => "LICENSE" }
+  s.homepage     = 'https://developers.facebook.com/docs/ios/'
+  s.license      = { type: 'Facebook Platform License', file: 'LICENSE' }
   s.author       = 'Facebook'
 
-  s.platform     = :ios, "9.0"
-  s.ios.deployment_target = "7.0"
+  s.platform     = :ios, :tvos
+  s.ios.deployment_target = '8.0'
+  s.tvos.deployment_target = '10.0'
 
-  s.source       = { :git => "https://github.com/facebook/facebook-ios-sdk.git",
-                     :tag => "sdk-version-4.7.0"
-                    }
+  s.source       = {
+    git: 'https://github.com/facebook/facebook-ios-sdk.git',
+    tag: "v#{s.version}"
+  }
 
-  s.weak_frameworks = "Accounts", "CoreLocation", "Social", "Security", "QuartzCore", "CoreGraphics", "UIKit", "Foundation", "AudioToolbox"
+  s.ios.weak_frameworks = 'Accelerate', 'Accounts', 'Social', 'Security', 'QuartzCore', 'CoreGraphics', 'UIKit', 'Foundation', 'AudioToolbox'
+  s.tvos.weak_frameworks = 'CoreLocation', 'Security', 'QuartzCore', 'CoreGraphics', 'UIKit', 'Foundation', 'AudioToolbox'
 
-  s.dependency 'Bolts', '~> 1.1'
+  # This excludes `FBSDKCoreKit/FBSDKCoreKit/Internal_NoARC/` folder, as that folder includes only `no-arc` files.
+  s.requires_arc = ['FBSDKCoreKit/FBSDKCoreKit/*',
+                    'FBSDKCoreKit/FBSDKCoreKit/AppEvents/**/*',
+                    'FBSDKCoreKit/FBSDKCoreKit/AppLink/**/*',
+                    'FBSDKCoreKit/FBSDKCoreKit/Basics/**/*',
+                    'FBSDKCoreKit/FBSDKCoreKit/GraphAPI/*',
+                    'FBSDKCoreKit/FBSDKCoreKit/Internal/**/*']
 
-  s.header_dir = "FBSDKCoreKit"
+  s.default_subspecs = 'Core', 'Basics'
+  s.swift_version = '5.0'
+  s.pod_target_xcconfig = {
+    'GCC_PREPROCESSOR_DEFINITIONS': '$(inherited) FBSDKCOCOAPODS=1',
+    'DEFINES_MODULE': 'YES'
+  }
+  s.user_target_xcconfig = {'GCC_PREPROCESSOR_DEFINITIONS': '$(inherited) FBSDKCOCOAPODS=1' }
+  s.library = 'c++', 'stdc++'
 
-  # set header_mappings_dir to resolve our quoted imports in the +Internal file.
-  s.header_mappings_dir = "FBSDKCoreKit/FBSDKCoreKit/Internal"
-
-  # The following subspecs are only to disable ARC on certain files. They should not be used as dependencies in your Podfile.
-  s.subspec 'arc' do |sp|
-    sp.public_header_files = "FBSDKCoreKit/FBSDKCoreKit/*.h"
-    sp.source_files   = "FBSDKCoreKit/FBSDKCoreKit/**/*.{h,m}"
-    sp.exclude_files = "FBSDKCoreKit/FBSDKCoreKit/Internal/FBSDKDynamicFrameworkLoader.m"
-    sp.requires_arc = true
+  s.subspec 'Basics' do |ss|
+    ss.source_files = 'FBSDKCoreKit/FBSDKCoreKit/Basics/*.{h,m}',
+                      'FBSDKCoreKit/FBSDKCoreKit/Basics/**/*.{h,m}'
+    ss.public_header_files = 'FBSDKCoreKit/FBSDKCoreKit/Basics/Internal/**/*.h',
+                             'FBSDKCoreKit/FBSDKCoreKit/Basics/Instrument/**/*.h',
+                             'FBSDKCoreKit/FBSDKCoreKit/Basics/*.h'
+    ss.private_header_files = 'FBSDKCoreKit/FBSDKCoreKit/Basics/Internal/**/*.h',
+                              'FBSDKCoreKit/FBSDKCoreKit/Basics/Instrument/**/*.h'
+    ss.library = 'z'
   end
 
-  s.subspec 'no-arc' do |sp|
-    sp.source_files = "FBSDKCoreKit/FBSDKCoreKit/Internal/FBSDKDynamicFrameworkLoader.m"
-    sp.requires_arc = false
-    sp.dependency 'FBSDKCoreKit/arc'
+  s.subspec 'Core' do |ss|
+    ss.dependency 'FBSDKCoreKit/Basics'
+    ss.exclude_files = 'FBSDKCoreKit/FBSDKCoreKit/Basics/*',
+                       'FBSDKCoreKit/FBSDKCoreKit/Basics/**/*.{h,m}',
+                       'FBSDKCoreKit/FBSDKCoreKit/include/**/*',
+                       'FBSDKCoreKit/FBSDKCoreKit/Swift/Exports.swift'
+    ss.source_files = 'FBSDKCoreKit/FBSDKCoreKit/**/*.{h,hpp,m,mm,swift}'
+    ss.public_header_files = 'FBSDKCoreKit/FBSDKCoreKit/Internal/**/*.h',
+                             'FBSDKCoreKit/FBSDKCoreKit/AppEvents/Internal/**/*.h',
+                             'FBSDKCoreKit/FBSDKCoreKit/*.h',
+                             'FBSDKCoreKit/FBSDKCoreKit/AppEvents/*.h',
+                             'FBSDKCoreKit/FBSDKCoreKit/AppLink/*.h',
+                             'FBSDKCoreKit/FBSDKCoreKit/GraphAPI/*.h'
+    ss.private_header_files = 'FBSDKCoreKit/FBSDKCoreKit/Internal/**/*.h',
+                              'FBSDKCoreKit/FBSDKCoreKit/AppEvents/Internal/**/*.h'
+    ss.resources = 'FacebookSDKStrings.bundle'
+    ss.library = 'c++', 'stdc++'
   end
 end
